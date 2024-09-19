@@ -5,17 +5,14 @@ import random
 pygame.init()
 
 # Screen dimensions
-WIDTH, HEIGHT = 600, 600
-ROWS, COLS = 10, 10
+WIDTH, HEIGHT = 700, 700
+ROWS, COLS = 7, 7
 TILE_SIZE = WIDTH // COLS
 
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-GREEN = (0, 255, 0)
-RED = (255, 0, 0)
-BLUE = (0, 0, 255)
-GOLD_COLOR = (255, 215, 0)
+DARK_GREEN = (0, 100, 0)  # Border color
 
 # Create the screen
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -23,8 +20,20 @@ pygame.display.set_caption("Extended Wampus World")
 
 # Fonts for displaying text
 font = pygame.font.SysFont(None, 36)
-small_font = pygame.font.SysFont(None, 24)
 
+# Load images for player, wampus, pit, gold, and house
+player_img = pygame.image.load("Player.jpg")
+wampus_img = pygame.image.load("Wampus.jpg")
+pit_img = pygame.image.load("Pit.jpg")
+gold_img = pygame.image.load("Gold.jpg")
+house_img = pygame.image.load("House.jpg")
+
+# Scale images to fit the tile size
+player_img = pygame.transform.scale(player_img, (TILE_SIZE, TILE_SIZE))
+wampus_img = pygame.transform.scale(wampus_img, (TILE_SIZE, TILE_SIZE))
+pit_img = pygame.transform.scale(pit_img, (TILE_SIZE, TILE_SIZE))
+gold_img = pygame.transform.scale(gold_img, (TILE_SIZE, TILE_SIZE))
+house_img = pygame.transform.scale(house_img, (TILE_SIZE, TILE_SIZE))
 
 # Define the Player, Wampus, Pit, and Gold classes
 class Player:
@@ -33,6 +42,8 @@ class Player:
         self.col = col
         self.arrow = True  # Player starts with one arrow
         self.has_gold = False
+        self.move_delay = 500  # Player can move every 500 milliseconds (0.5 seconds)
+        self.last_move_time = 0  # Track the last time the player moved
 
     def move(self, dx, dy):
         # Ensure the player doesn't move out of bounds
@@ -43,8 +54,11 @@ class Player:
             self.col = new_col
 
     def draw(self, screen):
-        pygame.draw.rect(screen, GREEN, (self.col * TILE_SIZE, self.row * TILE_SIZE, TILE_SIZE, TILE_SIZE))
+        screen.blit(player_img, (self.col * TILE_SIZE, self.row * TILE_SIZE))
 
+    def can_move(self, current_time):
+        # Check if enough time has passed since the last move
+        return current_time - self.last_move_time >= self.move_delay
 
 class Wampus:
     def __init__(self, row, col):
@@ -64,8 +78,7 @@ class Wampus:
 
     def draw(self, screen):
         if self.alive:
-            pygame.draw.rect(screen, RED, (self.col * TILE_SIZE, self.row * TILE_SIZE, TILE_SIZE, TILE_SIZE))
-
+            screen.blit(wampus_img, (self.col * TILE_SIZE, self.row * TILE_SIZE))
 
 class Pit:
     def __init__(self, row, col):
@@ -73,8 +86,7 @@ class Pit:
         self.col = col
 
     def draw(self, screen):
-        pygame.draw.rect(screen, BLUE, (self.col * TILE_SIZE, self.row * TILE_SIZE, TILE_SIZE, TILE_SIZE))
-
+        screen.blit(pit_img, (self.col * TILE_SIZE, self.row * TILE_SIZE))
 
 class Gold:
     def __init__(self, row, col):
@@ -84,14 +96,26 @@ class Gold:
 
     def draw(self, screen):
         if not self.collected:
-            pygame.draw.rect(screen, GOLD_COLOR, (self.col * TILE_SIZE, self.row * TILE_SIZE, TILE_SIZE, TILE_SIZE))
+            screen.blit(gold_img, (self.col * TILE_SIZE, self.row * TILE_SIZE))
 
+# Draw grid with dark green borders
+def draw_grid():
+    for row in range(ROWS):
+        for col in range(COLS):
+            pygame.draw.rect(screen, DARK_GREEN, (col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE), 2)
 
 # Setup initial game state
-player = Player(0, 0)  # Player starts at the top-left corner
-wampus = Wampus(random.randint(0, ROWS - 1), random.randint(0, COLS - 1))  # Wampus starts at a random position
-pits = [Pit(random.randint(0, ROWS - 1), random.randint(0, COLS - 1)) for _ in range(5)]  # 5 random pits
-gold = Gold(random.randint(0, ROWS - 1), random.randint(0, COLS - 1))  # Gold at a random position
+def reset_game():
+    global player, wampus, pits, gold, game_over
+    player = Player(random.randint(0, ROWS - 1), random.randint(0, COLS - 1))  # Random player position
+    wampus = Wampus(random.randint(0, ROWS - 1), random.randint(0, COLS - 1))  # Random Wampus position
+    pits = [Pit(random.randint(0, ROWS - 1), random.randint(0, COLS - 1)) for _ in range(5)]  # 5 random pits
+    gold = Gold(random.randint(0, ROWS - 1), random.randint(0, COLS - 1))  # Gold at a random position
+    game_over = False  # To track the state of the game
+    print("Game reset. New positions have been assigned.")
+
+# Initialize game state
+reset_game()
 
 # Game loop
 running = True
@@ -112,8 +136,8 @@ while running:
             "- Left: Arrow Left",
             "- Right: Arrow Right",
             "Press 'Space' to shoot the arrow.",
-            "Goal: Collect the gold, kill the Wampus, and return to the start to win!",
-            "Press any key to begin!"
+            "Goal: Collect Gold,kill Wampus and return to Home",
+            "Press any Key to Begin!"
         ]
         for idx, line in enumerate(instructions):
             text = font.render(line, True, BLACK)
@@ -128,21 +152,40 @@ while running:
                 game_start = False  # Start the game after key press
         continue
 
+    # Get current time
+    current_time = pygame.time.get_ticks()
+
     # Event handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-    # Player movement handling
+    # If the game is over, stop everything and show a message
+    if game_over:
+        end_message = "Game Over! Press ESC to exit."
+        text = font.render(end_message, True, BLACK)
+        screen.blit(text, (WIDTH // 4, HEIGHT // 2))
+        pygame.display.flip()
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_ESCAPE]:
+            running = False  # Exit the game
+        continue
+
+    # Player movement handling with a delay
     keys = pygame.key.get_pressed()
-    if keys[pygame.K_LEFT]:
-        player.move(-1, 0)
-    if keys[pygame.K_RIGHT]:
-        player.move(1, 0)
-    if keys[pygame.K_UP]:
-        player.move(0, -1)
-    if keys[pygame.K_DOWN]:
-        player.move(0, 1)
+    if player.can_move(current_time):  # Check if player can move
+        if keys[pygame.K_LEFT]:
+            player.move(-1, 0)
+            player.last_move_time = current_time  # Update the last move time
+        if keys[pygame.K_RIGHT]:
+            player.move(1, 0)
+            player.last_move_time = current_time
+        if keys[pygame.K_UP]:
+            player.move(0, -1)
+            player.last_move_time = current_time
+        if keys[pygame.K_DOWN]:
+            player.move(0, 1)
+            player.last_move_time = current_time
 
     # Player shoots arrow
     if keys[pygame.K_SPACE] and player.arrow:
@@ -157,7 +200,13 @@ while running:
         wampus.move_random()
         wampus_move_timer = 0
 
-    # Draw everything
+    # Draw the grid with borders
+    draw_grid()
+
+    # Draw house at the starting position
+    screen.blit(house_img, (0, 0))
+
+    # Draw everything else
     player.draw(screen)
     wampus.draw(screen)
     for pit in pits:
@@ -173,18 +222,19 @@ while running:
     # Check if player falls into a pit
     for pit in pits:
         if player.row == pit.row and player.col == pit.col:
-            print("You fell into a pit!")
-            running = False
+            print("You fell into a pit! Game Over.")
+            game_over = True
+            break
 
     # Check if player returns to start after collecting gold
     if player.row == 0 and player.col == 0 and player.has_gold:
-        print("You returned to the start with the gold! You win!")
-        running = False
+        print("You returned to the start with the gold! You win! Game Over.")
+        game_over = True
 
     # Check if player gets caught by Wampus
     if player.row == wampus.row and player.col == wampus.col and wampus.alive:
-        print("You were caught by the Wampus!")
-        running = False
+        print("You were caught by the Wampus! Game Over.")
+        game_over = True
 
     # Update display and tick clock
     pygame.display.flip()
@@ -192,4 +242,3 @@ while running:
 
 # Quit the game
 pygame.quit()
-
